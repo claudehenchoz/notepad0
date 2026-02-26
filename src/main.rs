@@ -8,30 +8,24 @@ mod state;
 mod status_bar;
 
 use std::ffi::c_void;
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::OnceLock;
 
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::DeleteObject;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::Controls::{
-    InitCommonControlsEx, INITCOMMONCONTROLSEX, ICC_BAR_CLASSES,
-};
 use windows::Win32::UI::Controls::Dialogs::FINDREPLACEW;
+use windows::Win32::UI::Controls::{InitCommonControlsEx, ICC_BAR_CLASSES, INITCOMMONCONTROLSEX};
 use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
-    GetClientRect, GetMessageW, IsDialogMessageW, PostQuitMessage,
-    RegisterClassExW, RegisterWindowMessageW, SendMessageW, SetWindowPos,
-    ShowWindow, TranslateMessage, GetWindowTextLengthW, GetWindowTextW,
-    SetWindowTextW,
-    CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, EN_CHANGE, HMENU,
-    IDC_ARROW, LoadCursorW, MSG, SWP_NOZORDER, SW_SHOW,
-    WM_CLOSE, WM_COMMAND, WM_CREATE, WM_DESTROY, WM_INITMENUPOPUP,
-    WM_SETFONT, WM_SIZE, WNDCLASSEXW, WS_CHILD, WS_EX_CLIENTEDGE,
-    WS_HSCROLL, WS_OVERLAPPEDWINDOW, WS_VISIBLE, WS_VSCROLL,
-    WINDOW_EX_STYLE, WINDOW_STYLE,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetMessageW,
+    GetWindowTextLengthW, GetWindowTextW, IsDialogMessageW, LoadCursorW, PostQuitMessage,
+    RegisterClassExW, RegisterWindowMessageW, SendMessageW, SetWindowPos, SetWindowTextW,
+    ShowWindow, TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, EN_CHANGE, HMENU,
+    IDC_ARROW, MSG, SWP_NOZORDER, SW_SHOW, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND,
+    WM_CREATE, WM_DESTROY, WM_INITMENUPOPUP, WM_SETFONT, WM_SIZE, WNDCLASSEXW, WS_CHILD,
+    WS_EX_CLIENTEDGE, WS_HSCROLL, WS_OVERLAPPEDWINDOW, WS_VISIBLE, WS_VSCROLL,
 };
 
 use crate::state::STATE;
@@ -107,14 +101,20 @@ fn main() {
             w!("Notepad0Class"),
             w!("Untitled - Notepad Zero"),
             WS_OVERLAPPEDWINDOW,
-            CW_USEDEFAULT, CW_USEDEFAULT,
-            800, 600,
-            None, None,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            800,
+            600,
+            None,
+            None,
             hinstance,
             None,
-        ).unwrap_or(HWND(std::ptr::null_mut()));
+        )
+        .unwrap_or(HWND(std::ptr::null_mut()));
 
-        if hwnd.is_invalid() { return; }
+        if hwnd.is_invalid() {
+            return;
+        }
 
         ShowWindow(hwnd, SW_SHOW);
         windows::Win32::Graphics::Gdi::UpdateWindow(hwnd);
@@ -122,7 +122,9 @@ fn main() {
         let mut msg = MSG::default();
         loop {
             let ret = GetMessageW(&mut msg, None, 0, 0);
-            if ret.0 == 0 || ret.0 == -1 { break; }
+            if ret.0 == 0 || ret.0 == -1 {
+                break;
+            }
 
             let fr_hwnd = STATE.with(|s| s.borrow().find_replace_hwnd);
             if let Some(fh) = fr_hwnd {
@@ -157,9 +159,14 @@ unsafe extern "system" fn wnd_proc(
             let hinstance: HINSTANCE = GetModuleHandleW(None).unwrap().into();
 
             let edit_style = WINDOW_STYLE(
-                WS_CHILD.0 | WS_VISIBLE.0 | WS_VSCROLL.0
-                    | ES_MULTILINE | ES_AUTOVSCROLL | ES_NOHIDESEL
-                    | ES_AUTOHSCROLL | WS_HSCROLL.0,
+                WS_CHILD.0
+                    | WS_VISIBLE.0
+                    | WS_VSCROLL.0
+                    | ES_MULTILINE
+                    | ES_AUTOVSCROLL
+                    | ES_NOHIDESEL
+                    | ES_AUTOHSCROLL
+                    | WS_HSCROLL.0,
             );
 
             let hwnd_edit_new = CreateWindowExW(
@@ -167,12 +174,16 @@ unsafe extern "system" fn wnd_proc(
                 w!("EDIT"),
                 PCWSTR::null(),
                 edit_style,
-                0, 0, 0, 0,
+                0,
+                0,
+                0,
+                0,
                 hwnd,
                 HMENU(IDC_EDIT as *mut c_void),
                 hinstance,
                 None,
-            ).unwrap_or(HWND(std::ptr::null_mut()));
+            )
+            .unwrap_or(HWND(std::ptr::null_mut()));
 
             HWND_EDIT_RAW.store(hwnd_edit_new.0 as usize, Ordering::Relaxed);
             SendMessageW(hwnd_edit_new, EM_SETLIMITTEXT, WPARAM(0), LPARAM(0));
@@ -210,7 +221,8 @@ unsafe extern "system" fn wnd_proc(
             let _ = SetWindowPos(
                 hwnd_edit(),
                 None,
-                0, 0,
+                0,
+                0,
                 width,
                 (height - status_height).max(0),
                 SWP_NOZORDER,
@@ -253,7 +265,9 @@ unsafe extern "system" fn wnd_proc(
         WM_DESTROY => {
             let hfont = STATE.with(|s| s.borrow_mut().hfont.take());
             if let Some(f) = hfont {
-                if !f.is_invalid() { let _ = DeleteObject(f); }
+                if !f.is_invalid() {
+                    let _ = DeleteObject(f);
+                }
             }
             PostQuitMessage(0);
             LRESULT(0)
@@ -267,9 +281,21 @@ fn apply_initial_font(hwnd_edit: HWND) {
     use crate::state::pts_to_lfheight;
     unsafe {
         let height = pts_to_lfheight(10);
-        let face: Vec<u16> = "Courier New\0".encode_utf16().collect();
+        let face: Vec<u16> = "Consolas\0".encode_utf16().collect();
         let hfont = windows::Win32::Graphics::Gdi::CreateFontW(
-            height, 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0,
+            height,
+            0,
+            0,
+            0,
+            400,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
             PCWSTR(face.as_ptr()),
         );
         if !hfont.is_invalid() {
@@ -301,8 +327,8 @@ pub fn recreate_edit(hwnd: HWND) {
         let hinstance: HINSTANCE = GetModuleHandleW(None).unwrap().into();
         let word_wrap = STATE.with(|s| s.borrow().word_wrap_enabled);
 
-        let base = WS_CHILD.0 | WS_VISIBLE.0 | WS_VSCROLL.0
-            | ES_MULTILINE | ES_AUTOVSCROLL | ES_NOHIDESEL;
+        let base =
+            WS_CHILD.0 | WS_VISIBLE.0 | WS_VSCROLL.0 | ES_MULTILINE | ES_AUTOVSCROLL | ES_NOHIDESEL;
 
         let edit_style = if word_wrap {
             WINDOW_STYLE(base)
@@ -315,12 +341,16 @@ pub fn recreate_edit(hwnd: HWND) {
             w!("EDIT"),
             PCWSTR::null(),
             edit_style,
-            0, 0, 0, 0,
+            0,
+            0,
+            0,
+            0,
             hwnd,
             HMENU(IDC_EDIT as *mut c_void),
             hinstance,
             None,
-        ).unwrap_or(HWND(std::ptr::null_mut()));
+        )
+        .unwrap_or(HWND(std::ptr::null_mut()));
 
         HWND_EDIT_RAW.store(new_edit.0 as usize, Ordering::Relaxed);
         SendMessageW(new_edit, EM_SETLIMITTEXT, WPARAM(0), LPARAM(0));
@@ -330,7 +360,12 @@ pub fn recreate_edit(hwnd: HWND) {
         SetWindowTextW(new_edit, PCWSTR(text_buf.as_ptr()));
         STATE.with(|s| s.borrow_mut().suppress_dirty = false);
 
-        SendMessageW(new_edit, EM_SETSEL, WPARAM(sel_start), LPARAM(sel_end as isize));
+        SendMessageW(
+            new_edit,
+            EM_SETSEL,
+            WPARAM(sel_start),
+            LPARAM(sel_end as isize),
+        );
 
         let hfont = STATE.with(|s| s.borrow().hfont);
         if let Some(f) = hfont {
