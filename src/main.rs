@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::OnceLock;
 
 use windows::core::{w, PCWSTR};
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{BOOL, HINSTANCE, HWND, LPARAM, LRESULT, MAX_PATH, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::DeleteObject;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::Dialogs::FINDREPLACEW;
@@ -28,12 +28,16 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WS_EX_CLIENTEDGE, WS_HSCROLL, WS_OVERLAPPEDWINDOW, WS_VISIBLE, WS_VSCROLL,
 };
 
+use windows::Win32::UI::Shell::{DragAcceptFiles, DragFinish, DragQueryFileW, HDROP};
+
 use crate::state::STATE;
 
 // Raw edit control message IDs
 const EM_SETLIMITTEXT: u32 = 0x00C5;
 const EM_GETSEL: u32 = 0x00B0;
 const EM_SETSEL: u32 = 0x00B1;
+
+const WM_DROPFILES: u32 = 0x0233;
 
 // ES_* style bits
 const ES_MULTILINE: u32 = 0x0004;
@@ -203,6 +207,7 @@ unsafe extern "system" fn wnd_proc(
             status_bar::subclass_edit(hwnd_edit_new);
             menu::create_menu(hwnd);
             status_bar::update_status_bar();
+            DragAcceptFiles(hwnd, BOOL(1));
 
             LRESULT(0)
         }
@@ -278,6 +283,21 @@ unsafe extern "system" fn wnd_proc(
                 }
             }
             PostQuitMessage(0);
+            LRESULT(0)
+        }
+
+        WM_DROPFILES => {
+            let hdrop = HDROP(wparam.0 as *mut c_void);
+            let mut path_buf = vec![0u16; MAX_PATH as usize];
+            let char_count = DragQueryFileW(hdrop, 0, Some(&mut path_buf));
+            DragFinish(hdrop);
+
+            if char_count > 0 {
+                let path = String::from_utf16_lossy(&path_buf[..char_count as usize]);
+                if menu::prompt_save_if_dirty(hwnd) {
+                    file_io::load_file(hwnd, &path);
+                }
+            }
             LRESULT(0)
         }
 
