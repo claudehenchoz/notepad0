@@ -119,6 +119,14 @@ fn main() {
         ShowWindow(hwnd, SW_SHOW);
         windows::Win32::Graphics::Gdi::UpdateWindow(hwnd);
 
+        // Open file passed on the command line (e.g. notepad0.exe foo.txt)
+        if let Some(arg_path) = std::env::args().nth(1) {
+            let resolved = std::fs::canonicalize(&arg_path)
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or(arg_path);
+            file_io::load_file(hwnd, &resolved);
+        }
+
         let mut msg = MSG::default();
         loop {
             let ret = GetMessageW(&mut msg, None, 0, 0);
