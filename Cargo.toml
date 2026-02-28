@@ -16,6 +16,7 @@ features = [
   "Win32_UI_Controls_Dialogs",
   "Win32_UI_Shell",
   "Win32_System_LibraryLoader",
+  "Win32_System_Registry",
   "Win32_System_Memory",
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_Globalization",

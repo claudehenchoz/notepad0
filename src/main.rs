@@ -4,6 +4,7 @@
 mod dialogs;
 mod file_io;
 mod menu;
+mod settings;
 mod state;
 mod status_bar;
 
@@ -23,7 +24,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowTextLengthW, GetWindowTextW, IsDialogMessageW, LoadCursorW, PostQuitMessage,
     RegisterClassExW, RegisterWindowMessageW, SendMessageW, SetWindowPos, SetWindowTextW,
     ShowWindow, TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, EN_CHANGE, HMENU,
-    IDC_ARROW, MSG, SWP_NOZORDER, SW_SHOW, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND,
+    IDC_ARROW, MSG, SWP_NOZORDER, SW_HIDE, SW_SHOW, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND,
     WM_CREATE, WM_DESTROY, WM_INITMENUPOPUP, WM_SETFONT, WM_SIZE, WNDCLASSEXW, WS_CHILD,
     WS_EX_CLIENTEDGE, WS_HSCROLL, WS_OVERLAPPEDWINDOW, WS_VISIBLE, WS_VSCROLL,
 };
@@ -71,6 +72,10 @@ pub fn set_hwnd_edit(h: HWND) {
 const IDC_EDIT: usize = 1;
 
 fn main() {
+    // Load persisted settings into STATE before any window is created.
+    // HKCU registry reads are memory-backed — no disk I/O, negligible latency.
+    settings::load();
+
     unsafe {
         let icc = INITCOMMONCONTROLSEX {
             dwSize: std::mem::size_of::<INITCOMMONCONTROLSEX>() as u32,
@@ -170,16 +175,14 @@ unsafe extern "system" fn wnd_proc(
             HWND_MAIN_RAW.store(hwnd.0 as usize, Ordering::Relaxed);
             let hinstance: HINSTANCE = GetModuleHandleW(None).unwrap().into();
 
-            let edit_style = WINDOW_STYLE(
-                WS_CHILD.0
-                    | WS_VISIBLE.0
-                    | WS_VSCROLL.0
-                    | ES_MULTILINE
-                    | ES_AUTOVSCROLL
-                    | ES_NOHIDESEL
-                    | ES_AUTOHSCROLL
-                    | WS_HSCROLL.0,
-            );
+            let base = WS_CHILD.0 | WS_VISIBLE.0 | WS_VSCROLL.0
+                | ES_MULTILINE | ES_AUTOVSCROLL | ES_NOHIDESEL;
+            let word_wrap_on = STATE.with(|s| s.borrow().word_wrap_enabled);
+            let edit_style = if word_wrap_on {
+                WINDOW_STYLE(base)
+            } else {
+                WINDOW_STYLE(base | ES_AUTOHSCROLL | WS_HSCROLL.0)
+            };
 
             let hwnd_edit_new = CreateWindowExW(
                 WS_EX_CLIENTEDGE,
@@ -203,6 +206,9 @@ unsafe extern "system" fn wnd_proc(
 
             let hwnd_status_new = status_bar::create_status_bar(hwnd, hinstance);
             HWND_STATUS_RAW.store(hwnd_status_new.0 as usize, Ordering::Relaxed);
+            if !STATE.with(|s| s.borrow().status_bar_visible) {
+                ShowWindow(hwnd_status_new, SW_HIDE);
+            }
 
             status_bar::subclass_edit(hwnd_edit_new);
             menu::create_menu(hwnd);
@@ -282,6 +288,7 @@ unsafe extern "system" fn wnd_proc(
                     let _ = DeleteObject(f);
                 }
             }
+            settings::save();
             PostQuitMessage(0);
             LRESULT(0)
         }
@@ -308,22 +315,29 @@ unsafe extern "system" fn wnd_proc(
 fn apply_initial_font(hwnd_edit: HWND) {
     use crate::state::pts_to_lfheight;
     unsafe {
-        let height = pts_to_lfheight(10);
-        let face: Vec<u16> = "Consolas\0".encode_utf16().collect();
+        let (face_str, pts, weight, italic, charset) = STATE.with(|s| {
+            let st = s.borrow();
+            (
+                st.current_font.face_name.clone(),
+                st.current_font.height_pts,
+                st.current_font.weight,
+                st.current_font.italic,
+                st.current_font.charset,
+            )
+        });
+
+        let height = pts_to_lfheight(pts);
+        let mut face: Vec<u16> = face_str.encode_utf16().collect();
+        face.push(0);
+
         let hfont = windows::Win32::Graphics::Gdi::CreateFontW(
             height,
-            0,
-            0,
-            0,
-            400,
-            0,
-            0,
-            0,
-            1,
-            0,
-            0,
-            0,
-            0,
+            0, 0, 0,
+            weight,
+            if italic { 1 } else { 0 },
+            0, 0,
+            charset as u32,
+            0, 0, 0, 0,
             PCWSTR(face.as_ptr()),
         );
         if !hfont.is_invalid() {
