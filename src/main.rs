@@ -23,8 +23,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetMessageW,
     GetWindowTextLengthW, GetWindowTextW, IsDialogMessageW, LoadCursorW, PostQuitMessage,
     RegisterClassExW, RegisterWindowMessageW, SendMessageW, SetWindowPos, SetWindowTextW,
-    ShowWindow, TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, EN_CHANGE, HMENU,
-    IDC_ARROW, MSG, SWP_NOZORDER, SW_HIDE, SW_SHOW, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND,
+    ShowWindow, TranslateAcceleratorW, TranslateMessage, ACCEL,
+    CreateAcceleratorTableW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, EN_CHANGE, FCONTROL,
+    FVIRTKEY, HACCEL, HMENU, IDC_ARROW, MSG, SWP_NOZORDER, SW_HIDE, SW_SHOW, WINDOW_EX_STYLE,
+    WINDOW_STYLE, WM_CLOSE, WM_COMMAND,
     WM_CREATE, WM_DESTROY, WM_INITMENUPOPUP, WM_SETFONT, WM_SIZE, WNDCLASSEXW, WS_CHILD,
     WS_EX_CLIENTEDGE, WS_HSCROLL, WS_OVERLAPPEDWINDOW, WS_VISIBLE, WS_VSCROLL,
 };
@@ -137,11 +139,36 @@ fn main() {
             file_io::load_file(hwnd, &resolved);
         }
 
+        // Build the accelerator table for all menu keyboard shortcuts.
+        // CreateAcceleratorTableW copies the array internally so it needs no lifetime.
+        let cv = FVIRTKEY | FCONTROL;
+        let fv = FVIRTKEY;
+        let accels = [
+            ACCEL { fVirt: cv, key: b'N' as u16, cmd: menu::FILE_NEW    as u16 }, // Ctrl+N
+            ACCEL { fVirt: cv, key: b'O' as u16, cmd: menu::FILE_OPEN   as u16 }, // Ctrl+O
+            ACCEL { fVirt: cv, key: b'S' as u16, cmd: menu::FILE_SAVE   as u16 }, // Ctrl+S
+            ACCEL { fVirt: cv, key: b'P' as u16, cmd: menu::FILE_PRINT  as u16 }, // Ctrl+P
+            ACCEL { fVirt: cv, key: b'F' as u16, cmd: menu::EDIT_FIND   as u16 }, // Ctrl+F
+            ACCEL { fVirt: cv, key: b'H' as u16, cmd: menu::EDIT_REPLACE as u16 }, // Ctrl+H
+            ACCEL { fVirt: cv, key: b'G' as u16, cmd: menu::EDIT_GOTO   as u16 }, // Ctrl+G
+            ACCEL { fVirt: fv, key: 0x72,         cmd: menu::EDIT_FINDNEXT as u16 }, // F3
+            ACCEL { fVirt: fv, key: 0x74,         cmd: menu::EDIT_TIMEDATE as u16 }, // F5
+        ];
+        let haccel: Option<HACCEL> = CreateAcceleratorTableW(&accels).ok();
+
         let mut msg = MSG::default();
         loop {
             let ret = GetMessageW(&mut msg, None, 0, 0);
             if ret.0 == 0 || ret.0 == -1 {
                 break;
+            }
+
+            // Accelerators must be checked first so Ctrl+N/O/S/P etc. are
+            // intercepted before the EDIT control or dialog sees them.
+            if let Some(ha) = haccel {
+                if TranslateAcceleratorW(hwnd, ha, &msg) != 0 {
+                    continue;
+                }
             }
 
             let fr_hwnd = STATE.with(|s| s.borrow().find_replace_hwnd);
