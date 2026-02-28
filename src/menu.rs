@@ -16,6 +16,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_CLEAR, WM_CLOSE, WM_COPY, WM_CUT, WM_PASTE, HMENU,
 };
 
+use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
+
 use crate::state::STATE;
 use crate::{file_io, dialogs, status_bar, hwnd_edit, recreate_edit};
 
@@ -225,6 +227,7 @@ fn file_new(hwnd: HWND) {
             st.is_dirty = false;
             st.current_file_path = None;
         });
+        SetFocus(hwnd_edit());
     }
     file_io::update_title(hwnd);
 }
@@ -235,6 +238,7 @@ fn file_open(hwnd: HWND) {
     }
     if let Some(path) = file_io::open_file_dialog(hwnd) {
         file_io::load_file(hwnd, &path);
+        unsafe { SetFocus(hwnd_edit()); }
     }
 }
 
