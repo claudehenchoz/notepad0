@@ -127,6 +127,7 @@ fn main() {
 
         ShowWindow(hwnd, SW_SHOW);
         windows::Win32::Graphics::Gdi::UpdateWindow(hwnd);
+        SetFocus(hwnd_edit());
 
         // Open file passed on the command line (e.g. notepad0.exe foo.txt)
         if let Some(arg_path) = std::env::args().nth(1) {
