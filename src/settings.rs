@@ -143,8 +143,7 @@ fn write_dword(hkey: HKEY, name: PCWSTR, val: u32) {
 }
 
 fn write_sz(hkey: HKEY, name: PCWSTR, val: &str) {
-    let mut wide: Vec<u16> = val.encode_utf16().collect();
-    wide.push(0); // null terminator
+    let wide = crate::state::wide_sz(val); // pre-sized, null included
     let bytes = unsafe {
         std::slice::from_raw_parts(wide.as_ptr() as *const u8, wide.len() * 2)
     };

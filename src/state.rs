@@ -1,6 +1,26 @@
 use std::cell::RefCell;
-use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Gdi::{GetDC, GetDeviceCaps, ReleaseDC, HFONT, LOGPIXELSY};
+
+/// Encode a Rust string as UTF-16 *with* a null terminator, pre-sized so the
+/// `push(0)` never reallocs. Replaces the `encode_utf16().collect()` + `push(0)`
+/// pattern that used to allocate twice.
+// (UTF-8 byte length is always >= UTF-16 code-unit count, so this capacity
+// never reallocs.)
+#[inline]
+pub fn wide_sz(s: &str) -> Vec<u16> {
+    let mut v: Vec<u16> = Vec::with_capacity(s.len() + 1);
+    v.extend(s.encode_utf16());
+    v.push(0);
+    v
+}
+
+/// Same as `wide_sz` but without the null terminator (e.g. needle buffers).
+#[inline]
+pub fn wide(s: &str) -> Vec<u16> {
+    let mut v: Vec<u16> = Vec::with_capacity(s.len());
+    v.extend(s.encode_utf16());
+    v
+}
 
 pub struct FontData {
     pub face_name: String,
@@ -32,9 +52,14 @@ pub struct AppState {
     pub hfont: Option<HFONT>,
     pub last_search: String,
     pub last_replace: String,
-    pub find_replace_hwnd: Option<HWND>,
     pub search_match_case: bool,
     pub search_whole_word: bool,
+    // ── repaint caches (avoids SetWindowTextW / SB_SETTEXT on hot paths) ──
+    /// Last UTF-16 title actually pushed to the title bar.
+    pub title_cache: Vec<u16>,
+    /// Last "Ln X, Col Y" values actually pushed to the status bar.
+    pub status_ln: i32,
+    pub status_col: i32,
 }
 
 impl Default for AppState {
@@ -49,9 +74,11 @@ impl Default for AppState {
             hfont: None,
             last_search: String::new(),
             last_replace: String::new(),
-            find_replace_hwnd: None,
             search_match_case: false,
             search_whole_word: false,
+            title_cache: Vec::new(),
+            status_ln: -1,
+            status_col: -1,
         }
     }
 }

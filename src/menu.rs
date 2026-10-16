@@ -259,9 +259,7 @@ pub fn prompt_save_if_dirty(hwnd: HWND) -> bool {
         .and_then(|n| n.to_str())
         .unwrap_or("Untitled");
 
-    let msg: Vec<u16> = format!("Do you want to save changes to {}?\0", file_name)
-        .encode_utf16()
-        .collect();
+    let msg = crate::state::wide_sz(&format!("Do you want to save changes to {}?", file_name));
 
     unsafe {
         use windows::Win32::UI::WindowsAndMessaging::{
@@ -287,12 +285,10 @@ fn insert_time_date() {
     unsafe {
         let st = GetLocalTime();
 
-        let text: Vec<u16> = format!(
-            "{:02}:{:02} {}/{}/{}\0",
+        let text = crate::state::wide_sz(&format!(
+            "{:02}:{:02} {}/{}/{}",
             st.wHour, st.wMinute, st.wMonth, st.wDay, st.wYear
-        )
-        .encode_utf16()
-        .collect();
+        ));
 
         SendMessageW(
             hwnd_edit(),

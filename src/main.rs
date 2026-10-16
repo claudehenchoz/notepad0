@@ -24,7 +24,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowTextLengthW, GetWindowTextW, IsDialogMessageW, LoadCursorW, PostQuitMessage,
     RegisterClassExW, RegisterWindowMessageW, SendMessageW, SetWindowPos, SetWindowTextW,
     ShowWindow, TranslateAcceleratorW, TranslateMessage, ACCEL,
-    CreateAcceleratorTableW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, EN_CHANGE, FCONTROL,
+    CreateAcceleratorTableW, CW_USEDEFAULT, EN_CHANGE, FCONTROL,
     FVIRTKEY, HACCEL, HMENU, IDC_ARROW, MSG, SWP_NOZORDER, SW_HIDE, SW_SHOW, WINDOW_EX_STYLE,
     WINDOW_STYLE, WM_CLOSE, WM_COMMAND,
     WM_CREATE, WM_DESTROY, WM_INITMENUPOPUP, WM_SETFONT, WM_SIZE, WNDCLASSEXW, WS_CHILD,
@@ -71,6 +71,18 @@ pub fn set_hwnd_edit(h: HWND) {
     HWND_EDIT_RAW.store(h.0 as usize, Ordering::Relaxed);
 }
 
+// Find/Replace dialog HWND lives in an atomic so the message loop (which sees
+// every message) doesn't need a thread-local RefCell borrow per message.
+static FIND_REPLACE_HWND_RAW: AtomicUsize = AtomicUsize::new(0);
+
+#[inline]
+pub fn find_replace_hwnd() -> HWND {
+    HWND(FIND_REPLACE_HWND_RAW.load(Ordering::Relaxed) as *mut c_void)
+}
+pub fn set_find_replace_hwnd(h: Option<HWND>) {
+    FIND_REPLACE_HWND_RAW.store(h.map_or(0, |h| h.0 as usize), Ordering::Relaxed);
+}
+
 const IDC_EDIT: usize = 1;
 
 fn main() {
@@ -87,9 +99,12 @@ fn main() {
 
         let hinstance: HINSTANCE = GetModuleHandleW(None).unwrap().into();
 
+        // No CS_HREDRAW/CS_VREDRAW: they force a full erase+repaint of the
+        // whole window on every resize. The EDIT control covers the client
+        // area and paints itself, so the class styles are pure overhead.
         let wc = WNDCLASSEXW {
             cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
-            style: CS_HREDRAW | CS_VREDRAW,
+            style: Default::default(),
             lpfnWndProc: Some(wnd_proc),
             cbClsExtra: 0,
             cbWndExtra: 0,
@@ -171,11 +186,9 @@ fn main() {
                 }
             }
 
-            let fr_hwnd = STATE.with(|s| s.borrow().find_replace_hwnd);
-            if let Some(fh) = fr_hwnd {
-                if !fh.is_invalid() && IsDialogMessageW(fh, &mut msg).as_bool() {
-                    continue;
-                }
+            let fh = find_replace_hwnd();
+            if !fh.is_invalid() && IsDialogMessageW(fh, &mut msg).as_bool() {
+                continue;
             }
 
             TranslateMessage(&msg);
@@ -282,9 +295,18 @@ unsafe extern "system" fn wnd_proc(
             let id = (wparam.0 & 0xFFFF) as u32;
 
             if id == IDC_EDIT as u32 && (notify as u32) == EN_CHANGE {
-                let suppress = STATE.with(|s| s.borrow().suppress_dirty);
-                if !suppress {
-                    STATE.with(|s| s.borrow_mut().is_dirty = true);
+                // Per-keystroke hot path: only flip clean→dirty once and only
+                // then touch the title bar (update_title is cached as well).
+                let became_dirty = STATE.with(|s| {
+                    let mut st = s.borrow_mut();
+                    if st.suppress_dirty || st.is_dirty {
+                        false
+                    } else {
+                        st.is_dirty = true;
+                        true
+                    }
+                });
+                if became_dirty {
                     file_io::update_title(hwnd);
                 }
                 LRESULT(0)
@@ -355,8 +377,7 @@ fn apply_initial_font(hwnd_edit: HWND) {
         });
 
         let height = pts_to_lfheight(pts);
-        let mut face: Vec<u16> = face_str.encode_utf16().collect();
-        face.push(0);
+        let face: Vec<u16> = crate::state::wide_sz(&face_str);
 
         let hfont = windows::Win32::Graphics::Gdi::CreateFontW(
             height,
@@ -386,9 +407,15 @@ pub fn recreate_edit(hwnd: HWND) {
         GetWindowTextW(old_edit, &mut text_buf);
         text_buf.truncate(len as usize);
 
-        let sel = SendMessageW(old_edit, EM_GETSEL, WPARAM(0), LPARAM(0)).0 as usize;
-        let sel_start = sel & 0xFFFF;
-        let sel_end = (sel >> 16) & 0xFFFF;
+        // Pointer args keep the selection 32-bit (return value truncates at 64K)
+        let mut sel_start: u32 = 0;
+        let mut sel_end: u32 = 0;
+        SendMessageW(
+            old_edit,
+            EM_GETSEL,
+            WPARAM(&mut sel_start as *mut u32 as usize),
+            LPARAM(&mut sel_end as *mut u32 as isize),
+        );
 
         status_bar::unsubclass_edit(old_edit);
         let _ = DestroyWindow(old_edit);
@@ -433,7 +460,7 @@ pub fn recreate_edit(hwnd: HWND) {
         SendMessageW(
             new_edit,
             EM_SETSEL,
-            WPARAM(sel_start),
+            WPARAM(sel_start as usize),
             LPARAM(sel_end as isize),
         );
 
@@ -455,6 +482,7 @@ pub fn recreate_edit(hwnd: HWND) {
             LPARAM(((rc.right as usize) | ((rc.bottom as usize) << 16)) as isize),
         );
 
+        status_bar::update_status_bar();
         SetFocus(new_edit);
     }
 }

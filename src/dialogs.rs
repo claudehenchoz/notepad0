@@ -17,8 +17,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     DLGTEMPLATE,
 };
 
-use crate::state::STATE;
-use crate::{file_io, hwnd_edit, hwnd_main};
+use crate::state::{wide, wide_sz, STATE};
+use crate::{file_io, hwnd_edit, hwnd_main, find_replace_hwnd, set_find_replace_hwnd};
 
 // ─── Edit control message constants ──────────────────────────────────────────
 const EM_GETSEL: u32 = 0x00B0;
@@ -64,12 +64,10 @@ fn make_find_state() -> Box<FindReplaceState> {
 }
 
 pub fn open_find(hwnd: HWND) {
-    let existing = STATE.with(|s| s.borrow().find_replace_hwnd);
-    if let Some(h) = existing {
-        if !h.is_invalid() {
-            unsafe { SetForegroundWindow(h); }
-            return;
-        }
+    let existing = find_replace_hwnd();
+    if !existing.is_invalid() {
+        unsafe { SetForegroundWindow(existing); }
+        return;
     }
 
     FIND_STATE.with(|fs| {
@@ -87,18 +85,16 @@ pub fn open_find(hwnd: HWND) {
 
         let hdlg = unsafe { FindTextW(fr_ptr) };
         if !hdlg.is_invalid() {
-            STATE.with(|s| s.borrow_mut().find_replace_hwnd = Some(hdlg));
+            set_find_replace_hwnd(Some(hdlg));
         }
     });
 }
 
 pub fn open_replace(hwnd: HWND) {
-    let existing = STATE.with(|s| s.borrow().find_replace_hwnd);
-    if let Some(h) = existing {
-        if !h.is_invalid() {
-            unsafe { SetForegroundWindow(h); }
-            return;
-        }
+    let existing = find_replace_hwnd();
+    if !existing.is_invalid() {
+        unsafe { SetForegroundWindow(existing); }
+        return;
     }
 
     FIND_STATE.with(|fs| {
@@ -118,7 +114,7 @@ pub fn open_replace(hwnd: HWND) {
 
         let hdlg = unsafe { ReplaceTextW(fr_ptr) };
         if !hdlg.is_invalid() {
-            STATE.with(|s| s.borrow_mut().find_replace_hwnd = Some(hdlg));
+            set_find_replace_hwnd(Some(hdlg));
         }
     });
 }
@@ -131,7 +127,7 @@ pub fn handle_find_message(fr: *const FINDREPLACEW) {
 
         if (flags & FR_DIALOGTERM).0 != 0 {
             FIND_STATE.with(|fs| *fs.borrow_mut() = None);
-            STATE.with(|s| s.borrow_mut().find_replace_hwnd = None);
+            set_find_replace_hwnd(None);
             return;
         }
 
@@ -196,11 +192,19 @@ fn find_next_internal(hwnd: HWND, needle: &str, match_case: bool, _whole_word: b
         GetWindowTextW(edit, &mut buf);
         buf.truncate(len as usize);
 
-        let sel = SendMessageW(edit, EM_GETSEL, WPARAM(0), LPARAM(0)).0 as u64;
-        let sel_start = (sel & 0xFFFF) as usize;
-        let sel_end = ((sel >> 16) & 0xFFFF) as usize;
+        // Pointer args keep positions 32-bit (return value truncates at 64K)
+        let mut sel_start: u32 = 0;
+        let mut sel_end: u32 = 0;
+        SendMessageW(
+            edit,
+            EM_GETSEL,
+            WPARAM(&mut sel_start as *mut u32 as usize),
+            LPARAM(&mut sel_end as *mut u32 as isize),
+        );
+        let sel_start = sel_start as usize;
+        let sel_end = sel_end as usize;
 
-        let needle_wide: Vec<u16> = needle.encode_utf16().collect();
+        let needle_wide = wide(needle);
 
         let found = if forward {
             find_in_wide(&buf, &needle_wide, sel_end, match_case)
@@ -224,9 +228,7 @@ fn find_next_internal(hwnd: HWND, needle: &str, match_case: bool, _whole_word: b
                 SendMessageW(edit, EM_SCROLLCARET, WPARAM(0), LPARAM(0));
             }
             None => {
-                let msg: Vec<u16> = format!("Cannot find \"{}\".\0", needle)
-                    .encode_utf16()
-                    .collect();
+                let msg = wide_sz(&format!("Cannot find \"{}\".", needle));
                 MessageBoxW(hwnd, PCWSTR(msg.as_ptr()), w!("Notepad Zero"), MB_OK);
             }
         }
@@ -278,11 +280,19 @@ fn do_replace_current(needle: &str, replacement: &str, match_case: bool, whole_w
     let edit = hwnd_edit();
     unsafe {
         // If current selection matches needle, replace it
-        let sel = SendMessageW(edit, EM_GETSEL, WPARAM(0), LPARAM(0)).0 as u64;
-        let sel_start = (sel & 0xFFFF) as usize;
-        let sel_end = ((sel >> 16) & 0xFFFF) as usize;
+        // Pointer args keep positions 32-bit (return value truncates at 64K)
+        let mut sel_start: u32 = 0;
+        let mut sel_end: u32 = 0;
+        SendMessageW(
+            edit,
+            EM_GETSEL,
+            WPARAM(&mut sel_start as *mut u32 as usize),
+            LPARAM(&mut sel_end as *mut u32 as isize),
+        );
+        let sel_start = sel_start as usize;
+        let sel_end = sel_end as usize;
 
-        let needle_wide: Vec<u16> = needle.encode_utf16().collect();
+        let needle_wide = wide(needle);
         if sel_end - sel_start == needle_wide.len() {
             // Verify the selected text matches
             use windows::Win32::UI::WindowsAndMessaging::{
@@ -299,8 +309,7 @@ fn do_replace_current(needle: &str, replacement: &str, match_case: bool, whole_w
                     match_case,
                 )
             {
-                let mut rep_wide: Vec<u16> = replacement.encode_utf16().collect();
-                rep_wide.push(0);
+                let rep_wide = wide_sz(replacement);
                 SendMessageW(
                     edit,
                     EM_REPLACESEL,
@@ -332,8 +341,8 @@ fn do_replace_all(needle: &str, replacement: &str, match_case: bool) {
         GetWindowTextW(edit, &mut buf);
         buf.truncate(len);
 
-        let needle_wide: Vec<u16> = needle.encode_utf16().collect();
-        let rep_wide: Vec<u16> = replacement.encode_utf16().collect();
+        let needle_wide = wide(needle);
+        let rep_wide = wide(replacement);
 
         let mut positions: Vec<usize> = Vec::new();
         let mut pos = 0;
@@ -348,9 +357,7 @@ fn do_replace_all(needle: &str, replacement: &str, match_case: bool) {
 
         let count = positions.len();
         if count == 0 {
-            let msg: Vec<u16> = format!("Cannot find \"{}\".\0", needle)
-                .encode_utf16()
-                .collect();
+            let msg = wide_sz(&format!("Cannot find \"{}\".", needle));
             MessageBoxW(hwnd_main(), PCWSTR(msg.as_ptr()), w!("Notepad Zero"), MB_OK);
             return;
         }
@@ -368,9 +375,7 @@ fn do_replace_all(needle: &str, replacement: &str, match_case: bool) {
         STATE.with(|s| s.borrow_mut().is_dirty = true);
         file_io::update_title(hwnd_main());
 
-        let msg: Vec<u16> = format!("{} replacement(s) made.\0", count)
-            .encode_utf16()
-            .collect();
+        let msg = wide_sz(&format!("{} replacement(s) made.", count));
         MessageBoxW(
             hwnd_main(),
             PCWSTR(msg.as_ptr()),
