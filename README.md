@@ -18,6 +18,13 @@ Windows 11 Notepad added tabs and a Copilot button. This is a replacement that b
 - Open files from the command line or by drag and drop
 - PerMonitorV2 DPI awareness
 
+## Download
+
+Each [release](https://github.com/claudehenchoz/notepad0/releases) has two files:
+
+- `notepad0-<version>-setup.exe`: one-click per-user installer (no admin rights, no prompts). It adds a Start menu entry, makes `notepad0` work from Win+R, and adds Notepad Zero to the right-click **Open with** menu for all files. Uninstall from Settings > Apps.
+- `notepad0-<version>-portable.zip`: the exe plus LICENSE; run it from anywhere.
+
 ## Building
 
 Requires Rust (stable) and a Windows MSVC toolchain.
