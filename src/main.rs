@@ -1,3 +1,20 @@
+// Notepad0 - a Windows 7-style Notepad clone
+// Copyright (C) 2026 Claude Henchoz
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 #![windows_subsystem = "windows"]
 #![allow(unused_must_use)]
 
@@ -17,11 +34,13 @@ use windows::Win32::Foundation::{BOOL, HINSTANCE, HWND, LPARAM, LRESULT, MAX_PAT
 use windows::Win32::Graphics::Gdi::DeleteObject;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::Dialogs::FINDREPLACEW;
-use windows::Win32::UI::Controls::{InitCommonControlsEx, ICC_BAR_CLASSES, INITCOMMONCONTROLSEX};
+use windows::Win32::UI::Controls::{InitCommonControlsEx, ICC_BAR_CLASSES, ICC_LINK_CLASS, INITCOMMONCONTROLSEX};
 use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetMessageW,
-    GetWindowTextLengthW, GetWindowTextW, IsDialogMessageW, LoadCursorW, PostQuitMessage,
+    GetSystemMetrics, GetWindowTextLengthW, GetWindowTextW, IsDialogMessageW, LoadCursorW,
+    LoadIconW, LoadImageW, PostQuitMessage, HICON, IMAGE_ICON, LR_DEFAULTCOLOR, SM_CXSMICON,
+    SM_CYSMICON,
     RegisterClassExW, RegisterWindowMessageW, SendMessageW, SetWindowPos, SetWindowTextW,
     ShowWindow, TranslateAcceleratorW, TranslateMessage, ACCEL,
     CreateAcceleratorTableW, CW_USEDEFAULT, EN_CHANGE, FCONTROL,
@@ -93,7 +112,7 @@ fn main() {
     unsafe {
         let icc = INITCOMMONCONTROLSEX {
             dwSize: std::mem::size_of::<INITCOMMONCONTROLSEX>() as u32,
-            dwICC: ICC_BAR_CLASSES,
+            dwICC: ICC_BAR_CLASSES | ICC_LINK_CLASS,
         };
         let _ = InitCommonControlsEx(&icc);
 
@@ -102,6 +121,18 @@ fn main() {
         // No CS_HREDRAW/CS_VREDRAW: they force a full erase+repaint of the
         // whole window on every resize. The EDIT control covers the client
         // area and paints itself, so the class styles are pure overhead.
+        // Icon resource ID 1, embedded from res/notepad0.rc by build.rs.
+        let icon_id = PCWSTR(1usize as *const u16);
+        let icon_sm = LoadImageW(
+            hinstance,
+            icon_id,
+            IMAGE_ICON,
+            GetSystemMetrics(SM_CXSMICON),
+            GetSystemMetrics(SM_CYSMICON),
+            LR_DEFAULTCOLOR,
+        )
+        .map(|h| HICON(h.0))
+        .unwrap_or_default();
         let wc = WNDCLASSEXW {
             cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
             style: Default::default(),
@@ -109,12 +140,12 @@ fn main() {
             cbClsExtra: 0,
             cbWndExtra: 0,
             hInstance: hinstance,
-            hIcon: Default::default(),
+            hIcon: LoadIconW(hinstance, icon_id).unwrap_or_default(),
             hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
             hbrBackground: windows::Win32::Graphics::Gdi::HBRUSH(6usize as *mut c_void),
             lpszMenuName: PCWSTR::null(),
             lpszClassName: w!("Notepad0Class"),
-            hIconSm: Default::default(),
+            hIconSm: icon_sm,
         };
 
         RegisterClassExW(&wc);

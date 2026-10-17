@@ -1,9 +1,29 @@
+// Notepad0 - a Windows 7-style Notepad clone
+// Copyright (C) 2026 Claude Henchoz
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 use std::cell::RefCell;
 use std::mem;
 
 use windows::core::{w, PCWSTR, PWSTR};
-use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
-use windows::Win32::Graphics::Gdi::{CreateFontIndirectW, DeleteObject, LOGFONTW};
+use windows::Win32::Foundation::{HWND, LPARAM, RECT, WPARAM};
+use windows::Win32::Graphics::Gdi::{CreateFontIndirectW, DeleteObject, GetObjectW, HGDIOBJ, LOGFONTW};
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::Controls::NMHDR;
+use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::Controls::Dialogs::{
     ChooseFontW, CHOOSEFONTW, CF_INITTOLOGFONTSTRUCT, CF_NOVERTFONTS, CF_SCREENFONTS,
     FindTextW, ReplaceTextW, FINDREPLACEW,
@@ -11,7 +31,8 @@ use windows::Win32::UI::Controls::Dialogs::{
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
-    DialogBoxIndirectParamW, EndDialog, GetDlgItem, GetDlgItemTextW,
+    DestroyIcon, DialogBoxIndirectParamW, EndDialog, GetClientRect, GetDlgItem, GetDlgItemTextW,
+    LoadImageW, HICON, IMAGE_ICON, LR_DEFAULTCOLOR, SW_SHOWNORMAL,
     MessageBoxW, SendMessageW, SetForegroundWindow,
     MB_ICONINFORMATION, MB_OK, WM_COMMAND, WM_INITDIALOG, WM_SETFONT,
     DLGTEMPLATE,
@@ -592,5 +613,163 @@ pub fn choose_font(hwnd: HWND) {
                 STATE.with(|s| s.borrow_mut().hfont = Some(new_font));
             }
         }
+    }
+}
+
+// ─── About Dialog ─────────────────────────────────────────────────────────────
+
+const ABOUT_ID_ICON: u16 = 200;
+const ABOUT_ID_TITLE: u16 = 201;
+const ABOUT_ID_LINK: u16 = 202;
+const SOURCE_URL: &str = "https://github.com/claudehenchoz/notepad0";
+
+const WM_NOTIFY: u32 = 0x004E;
+const WM_DESTROY: u32 = 0x0002;
+const WM_GETFONT: u32 = 0x0031;
+const STM_SETICON: u32 = 0x0170;
+const NM_CLICK: u32 = -2i32 as u32;
+const NM_RETURN: u32 = -4i32 as u32;
+
+pub fn open_about(hwnd: HWND) {
+    unsafe {
+        let template = build_about_template();
+        DialogBoxIndirectParamW(
+            None,
+            template.as_ptr() as *const DLGTEMPLATE,
+            hwnd,
+            Some(about_dlg_proc),
+            LPARAM(0),
+        );
+    }
+}
+
+fn build_about_template() -> Vec<u8> {
+    let mut buf: Vec<u8> = Vec::new();
+
+    let push_u16 = |buf: &mut Vec<u8>, v: u16| buf.extend_from_slice(&v.to_le_bytes());
+    let push_u32 = |buf: &mut Vec<u8>, v: u32| buf.extend_from_slice(&v.to_le_bytes());
+    let push_wstr = |buf: &mut Vec<u8>, s: &str| {
+        for c in s.encode_utf16() {
+            buf.extend_from_slice(&c.to_le_bytes());
+        }
+        buf.extend_from_slice(&0u16.to_le_bytes());
+    };
+    // One DLGITEMTEMPLATE. `class` is either a predefined atom or a class name.
+    let push_item = |buf: &mut Vec<u8>, style: u32, rect: [i16; 4], id: u16,
+                     class: Result<u16, &str>, text: &str| {
+        while buf.len() % 4 != 0 { buf.push(0); }
+        push_u32(buf, 0x40000000 | 0x10000000 | style); // WS_CHILD | WS_VISIBLE
+        push_u32(buf, 0);
+        for v in rect { buf.extend_from_slice(&v.to_le_bytes()); }
+        push_u16(buf, id);
+        match class {
+            Ok(atom) => { push_u16(buf, 0xFFFF); push_u16(buf, atom); }
+            Err(name) => push_wstr(buf, name),
+        }
+        push_wstr(buf, text);
+        push_u16(buf, 0); // no creation data
+    };
+
+    // WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_CENTER | DS_MODALFRAME | DS_SETFONT
+    let style: u32 = 0x80000000 | 0x00C00000 | 0x00080000 | 0x0800 | 0x0080 | 0x0040;
+    push_u32(&mut buf, style);
+    push_u32(&mut buf, 0);  // exstyle
+    push_u16(&mut buf, 7);  // cDlgItems
+    for v in [0i16, 0, 230, 104] { buf.extend_from_slice(&v.to_le_bytes()); } // x, y, cx, cy
+    push_u16(&mut buf, 0);  // no menu
+    push_u16(&mut buf, 0);  // default dialog class
+    push_wstr(&mut buf, "About Notepad Zero");
+    push_u16(&mut buf, 9);
+    push_wstr(&mut buf, "Segoe UI");
+
+    const STATIC: Result<u16, &str> = Ok(0x0082);
+    const BUTTON: Result<u16, &str> = Ok(0x0080);
+    // SS_ICON=0x03 | SS_CENTERIMAGE=0x200; icon is loaded at the control's pixel size.
+    push_item(&mut buf, 0x0003 | 0x0200, [10, 10, 34, 34], ABOUT_ID_ICON, STATIC, "");
+    push_item(&mut buf, 0, [54, 10, 166, 14], ABOUT_ID_TITLE, STATIC, "Notepad Zero");
+    push_item(&mut buf, 0, [54, 26, 166, 10], 0xFFFF, STATIC,
+              &format!("Version {}", env!("CARGO_PKG_VERSION")));
+    push_item(&mut buf, 0, [54, 40, 166, 10], 0xFFFF, STATIC,
+              "Copyright \u{00A9} 2026 Claude Henchoz");
+    push_item(&mut buf, 0, [54, 52, 166, 18], 0xFFFF, STATIC,
+              "Licensed under the GNU General Public License, version 3 or later.");
+    // SysLink (Common Controls v6, enabled by the manifest); WS_TABSTOP
+    push_item(&mut buf, 0x00010000, [54, 72, 166, 10], ABOUT_ID_LINK, Err("SysLink"),
+              &format!("Source: <a href=\"{SOURCE_URL}\">{}</a>",
+                       SOURCE_URL.trim_start_matches("https://")));
+    // BS_DEFPUSHBUTTON | WS_TABSTOP, IDOK
+    push_item(&mut buf, 0x00010000 | 0x01, [170, 84, 50, 14], 1, BUTTON, "OK");
+
+    buf
+}
+
+unsafe extern "system" fn about_dlg_proc(
+    hdlg: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> isize {
+    match msg {
+        m if m == WM_INITDIALOG => {
+            // Load the app icon at the icon control's actual (DPI-scaled) size.
+            if let Ok(ctrl) = GetDlgItem(hdlg, ABOUT_ID_ICON as i32) {
+                let mut rc = RECT::default();
+                let _ = GetClientRect(ctrl, &mut rc);
+                let size = (rc.right - rc.left).min(rc.bottom - rc.top);
+                let hinst = GetModuleHandleW(None).unwrap_or_default();
+                if let Ok(icon) = LoadImageW(hinst, PCWSTR(1usize as *const u16), IMAGE_ICON,
+                                             size, size, LR_DEFAULTCOLOR) {
+                    SendMessageW(ctrl, STM_SETICON, WPARAM(icon.0 as usize), LPARAM(0));
+                }
+            }
+            // Title in a larger bold variant of the dialog font.
+            if let Ok(title) = GetDlgItem(hdlg, ABOUT_ID_TITLE as i32) {
+                let base = HGDIOBJ(SendMessageW(hdlg, WM_GETFONT, WPARAM(0), LPARAM(0)).0 as _);
+                let mut lf = LOGFONTW::default();
+                if GetObjectW(base, mem::size_of::<LOGFONTW>() as i32,
+                              Some(&mut lf as *mut _ as *mut _)) != 0 {
+                    lf.lfWeight = 700;
+                    lf.lfHeight = lf.lfHeight * 3 / 2;
+                    let font = CreateFontIndirectW(&lf);
+                    SendMessageW(title, WM_SETFONT, WPARAM(font.0 as usize), LPARAM(0));
+                }
+            }
+            // Focus OK rather than the link (first tab stop); return 0 so it sticks.
+            if let Ok(ok) = GetDlgItem(hdlg, 1) {
+                let _ = SetFocus(ok);
+            }
+            0
+        }
+        m if m == WM_NOTIFY => {
+            let hdr = &*(lparam.0 as *const NMHDR);
+            if hdr.idFrom == ABOUT_ID_LINK as usize && (hdr.code == NM_CLICK || hdr.code == NM_RETURN) {
+                ShellExecuteW(hdlg, w!("open"), PCWSTR(wide_sz(SOURCE_URL).as_ptr()),
+                              PCWSTR::null(), PCWSTR::null(), SW_SHOWNORMAL);
+                return 1;
+            }
+            0
+        }
+        m if m == WM_COMMAND => {
+            let id = (wparam.0 & 0xFFFF) as i32;
+            if id == 1 || id == 2 {
+                let _ = EndDialog(hdlg, 0);
+                1
+            } else {
+                0
+            }
+        }
+        m if m == WM_DESTROY => {
+            // Free the icon and title font we created in WM_INITDIALOG.
+            if let Ok(ctrl) = GetDlgItem(hdlg, ABOUT_ID_ICON as i32) {
+                let old = SendMessageW(ctrl, STM_SETICON, WPARAM(0), LPARAM(0)).0;
+                if old != 0 { let _ = DestroyIcon(HICON(old as _)); }
+            }
+            if let Ok(title) = GetDlgItem(hdlg, ABOUT_ID_TITLE as i32) {
+                let font = SendMessageW(title, WM_GETFONT, WPARAM(0), LPARAM(0)).0;
+                if font != 0 { let _ = DeleteObject(HGDIOBJ(font as _)); }
+            }
+            0
+        }
+        _ => 0,
     }
 }

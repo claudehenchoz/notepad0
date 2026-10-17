@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- Copyright (C) 2026 Claude Henchoz. SPDX-License-Identifier: GPL-3.0-or-later -->
+  <rect x="0.5" y="2.5" width="12" height="13" rx="1" fill="#ffffff" stroke="#5f7696"/>
+  <rect x="1" y="3" width="11" height="2" fill="#2f6bc0"/>
+  <g fill="#7b8794">
+    <rect x="2" y="1" width="1" height="3"/>
+    <rect x="5" y="1" width="1" height="3"/>
+    <rect x="8" y="1" width="1" height="3"/>
+  </g>
+  <g fill="#9dbbe3">
+    <rect x="2" y="7" width="9" height="1"/>
+    <rect x="2" y="10" width="9" height="1"/>
+    <rect x="2" y="13" width="9" height="1"/>
+  </g>
+  <rect x="7" y="5" width="9" height="11" rx="4.5" fill="#ffffff"/>
+  <rect x="9" y="7" width="5" height="7" rx="2.5" fill="none" stroke="#d9590a" stroke-width="2"/>
+</svg>

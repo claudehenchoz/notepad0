@@ -2,6 +2,8 @@
 name = "notepad0"
 version = "0.1.0"
 edition = "2021"
+license = "GPL-3.0-or-later"
+authors = ["Claude Henchoz <claude.henchoz@gmail.com>"]
 
 [dependencies]
 
@@ -25,6 +27,7 @@ features = [
 
 [build-dependencies]
 embed-manifest = "1.5"
+embed-resource = "3.0.12"
 
 [profile.release]
 opt-level = 3

@@ -1,17 +1,33 @@
+// Notepad0 - a Windows 7-style Notepad clone
+// Copyright (C) 2026 Claude Henchoz
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::System::SystemInformation::GetLocalTime;
 use windows::Win32::UI::Controls::Dialogs::{
     PageSetupDlgW, PrintDlgW, PAGESETUPDLGW, PRINTDLGW, PD_RETURNDC,
 };
-use windows::Win32::UI::Shell::ShellAboutW;
 use windows::Win32::System::DataExchange::IsClipboardFormatAvailable;
 // CF_UNICODETEXT = 13
 const CF_UNICODETEXT_RAW: u32 = 13;
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CheckMenuItem, CreateMenu, CreatePopupMenu, EnableMenuItem,
     MessageBoxW, PostMessageW, SendMessageW, SetMenu,
-    MB_ICONQUESTION, MB_OK, MF_BYCOMMAND, MF_CHECKED,
+    MB_ICONQUESTION, MF_BYCOMMAND, MF_CHECKED,
     MF_ENABLED, MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MF_UNCHECKED,
     WM_CLEAR, WM_CLOSE, WM_COPY, WM_CUT, WM_PASTE, HMENU,
 };
@@ -47,7 +63,6 @@ pub const FMT_FONT: u32 = 302;
 
 pub const VIEW_STATUSBAR: u32 = 401;
 
-pub const HELP_HELP: u32 = 501;
 pub const HELP_ABOUT: u32 = 502;
 
 // Edit control message constants
@@ -106,8 +121,6 @@ pub fn create_menu(hwnd: HWND) {
 
         // Help menu
         let help_menu = CreatePopupMenu().unwrap();
-        AppendMenuW(help_menu, MF_STRING, HELP_HELP as usize, w!("View &Help"));
-        AppendMenuW(help_menu, MF_SEPARATOR, 0, PCWSTR::null());
         AppendMenuW(help_menu, MF_STRING, HELP_ABOUT as usize, w!("&About Notepad Zero"));
         AppendMenuW(hmenu, MF_POPUP, help_menu.0 as usize, w!("&Help"));
 
@@ -192,22 +205,7 @@ pub fn handle_command(hwnd: HWND, id: u32) {
 
         VIEW_STATUSBAR => status_bar::toggle(hwnd),
 
-        HELP_HELP => unsafe {
-            MessageBoxW(
-                hwnd,
-                w!("Notepad Zero \u{2014} a minimal Notepad clone.\n\nNo built-in help topics."),
-                w!("Help"),
-                MB_OK,
-            );
-        }
-        HELP_ABOUT => unsafe {
-            ShellAboutW(
-                hwnd,
-                w!("Notepad Zero"),
-                w!("A minimal Win32 Notepad clone written in Rust."),
-                None,
-            );
-        }
+        HELP_ABOUT => dialogs::open_about(hwnd),
 
         _ => {}
     }
