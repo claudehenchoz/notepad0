@@ -5,8 +5,9 @@
 ; Build: makensis /DVERSION=1.2.3 installer\notepad0.nsi
 ;
 ; Per-user install (no UAC prompt) into %LOCALAPPDATA%\Programs\Notepad Zero.
-; One-click: no welcome/license/directory pages; the window closes when done
-; and the app is launched. /S installs silently, /D=<dir> overrides the path.
+; Pages: install directory (confirms the install), progress, and a finish page
+; with a "Run Notepad Zero" checkbox. /S installs silently without launching,
+; /D=<dir> overrides the path.
 
 !ifndef VERSION
   !define VERSION "0.0.0"
@@ -28,16 +29,26 @@ XPStyle on
 Name "${APP}"
 Caption "${APP} ${VERSION} Setup"
 OutFile "notepad0-${VERSION}-setup.exe"
-Icon "..\res\installer.ico"
-UninstallIcon "..\res\installer.ico"
 InstallDir "$LOCALAPPDATA\Programs\${APP}"
 BrandingText " "
 ShowInstDetails nevershow
 ShowUninstDetails nevershow
-AutoCloseWindow true
 
-Page instfiles
-UninstPage instfiles
+!include "MUI2.nsh"
+!define MUI_ICON   "..\res\installer.ico"
+!define MUI_UNICON "..\res\installer.ico"
+!define MUI_ABORTWARNING
+
+!define MUI_DIRECTORYPAGE_TEXT_TOP "Setup will install ${APP} ${VERSION} in the following folder. To install in a different folder, click Browse. Click Install to start the installation."
+!insertmacro MUI_PAGE_DIRECTORY
+!insertmacro MUI_PAGE_INSTFILES
+!define MUI_FINISHPAGE_RUN "$INSTDIR\${EXE}"
+!define MUI_FINISHPAGE_RUN_TEXT "Run ${APP}"
+!insertmacro MUI_PAGE_FINISH
+
+!insertmacro MUI_UNPAGE_INSTFILES
+
+!insertmacro MUI_LANGUAGE "English"
 
 ; Text extensions that get "Open with > Notepad Zero" directly in the menu.
 ; Every other file type still lists it under Open with (via *\OpenWithList).
@@ -116,9 +127,6 @@ Section
 
   ; SHCNE_ASSOCCHANGED: refresh Explorer's association cache.
   System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
-
-  IfSilent +2
-    Exec '"$INSTDIR\${EXE}"'
 SectionEnd
 
 Section "Uninstall"
