@@ -17,7 +17,7 @@ otepad0.nsi`.
 
 A Windows 7-style Notepad clone written in pure Rust using the `windows` crate (v0.58) for raw Win32 API calls. No UI framework — everything is hand-crafted Win32. The binary is `#![windows_subsystem = "windows"]` (no console).
 
-`build.rs` embeds a PerMonitorV2 DPI-awareness manifest via `embed-manifest` and the app icon (`res/notepad0.rc` → `res/notepad0.ico`, resource ID 1) via `embed-resource` (needs the Windows SDK `rc.exe`). The `.ico` is rendered from `res/notepad0.svg` (20–256 px) and `res/notepad0-small.svg` (16 px) with ImageMagick; sizes up to 48 px are stored as BMP (compresses best in the installer/zip), 64 and 256 px as optimized PNG. `res/installer.ico` is a 16/32/48 px PNG-only icon for the NSIS installer.
+`build.rs` embeds a PerMonitorV2 DPI-awareness manifest via `embed-manifest` and the app icon (`res/notepad0.rc` → `res/notepad0.ico`, resource ID 1) via `embed-resource` (needs the Windows SDK `rc.exe`). The `.ico` is rendered entirely from `res/notepad0-small.svg` (16–256 px, by scaling its `width`/`height`) with ImageMagick; sizes up to 48 px are stored as BMP (compresses best in the installer/zip), 64 and 256 px as optimized PNG. `res/installer.ico` is a 16/32/48 px PNG-only icon for the NSIS installer.
 
 ## Architecture
 

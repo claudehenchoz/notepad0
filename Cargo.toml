@@ -1,6 +1,6 @@
 [package]
 name = "notepad0"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 authors = ["Claude Henchoz <claude.henchoz@gmail.com>"]
